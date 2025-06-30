@@ -1,0 +1,166 @@
+---
+title: 'Temporal Dynamics and Genre Performance in the PlayStation Portable Market:
+  A Factorial Analysis of Global Sales Patterns'
+author: "Mohammad Danish Malik"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ggplot2)
+
+# Load the dataset
+video_games <- read.csv("vgsales.csv")
+
+# Filter for PSP platform
+psp_data <- video_games %>% 
+  filter(Platform == "PSP")
+
+# Further filter for the selected genres
+psp_filtered <- psp_data %>%
+  filter(Genre %in% c("Action", "Adventure", "Role-Playing", "Strategy"))
+
+# Create time period variable
+psp_filtered <- psp_filtered %>%
+  mutate(TimePeriod = case_when(
+    Year >= 2004 & Year <= 2007 ~ "Early",
+    Year >= 2008 & Year <= 2011 ~ "Mid",
+    Year >= 2012 & Year <= 2015 ~ "Late",
+    TRUE ~ NA_character_
+  ))
+
+# Convert TimePeriod to factor with proper ordering
+psp_filtered$TimePeriod <- factor(psp_filtered$TimePeriod, 
+                                  levels = c("Early", "Mid", "Late"))
+
+# Drop NA values if any
+psp_filtered <- psp_filtered %>% 
+  filter(!is.na(TimePeriod), !is.na(Global_Sales))
+
+# Count the number of games in each genre and time period combination
+game_counts <- psp_filtered %>%
+  group_by(Genre, TimePeriod) %>%
+  summarise(Game_Count = n())
+
+# Display the results
+print(game_counts)
+
+# Set up a 1x2 panel layout
+par(mfrow = c(1, 2), mar = c(5, 4, 3, 1), oma = c(0, 0, 2, 0))
+
+# Boxplot of Global Sales by Genre
+boxplot(Global_Sales ~ Genre, data = psp_filtered, 
+        main = "By Genre", 
+        xlab = "Genre", 
+        ylab = "Global Sales", 
+        col = "lightblue")
+
+# Boxplot of Global Sales by TimePeriod
+boxplot(Global_Sales ~ TimePeriod, data = psp_filtered, 
+        main = "By Time Period", 
+        xlab = "Time Period", 
+        ylab = "", 
+        col = "lightgreen")
+
+
+# Reset the panel layout
+par(mfrow = c(1, 1))
+
+# Fit the ANOVA model
+model <- aov(Global_Sales ~ Genre * TimePeriod, data = psp_filtered)
+
+# Get ANOVA table
+anova_results <- summary(model)[[1]]
+print(anova_results)
+
+# Check assumptions
+par(mfrow = c(2, 2))
+plot(model)
+par(mfrow = c(1, 1))
+
+# Extract mean square error for later use
+MSE <- anova_results["Residuals", "Mean Sq"]
+
+# Calculate overall mean
+overall_mean <- mean(psp_filtered$Global_Sales)
+
+# Calculate genre means and effects
+genre_means <- psp_filtered %>%
+  group_by(Genre) %>%
+  summarise(Global_Sales = mean(Global_Sales)) %>%
+  mutate(effect = Global_Sales - overall_mean)
+print(genre_means)
+
+# Calculate time period means and effects
+period_means <- psp_filtered %>%
+  group_by(TimePeriod) %>%
+  summarise(Global_Sales = mean(Global_Sales)) %>%
+  mutate(effect = Global_Sales - overall_mean)
+print(period_means)
+
+# Get degrees of freedom for residuals
+df_residual <- anova_results["Residuals", "Df"]
+
+# Get critical t-value for 95% confidence
+t_critical <- qt(0.975, df_residual)
+
+# Calculate standard errors for genre effects
+n_genre <- nrow(psp_filtered) / length(unique(psp_filtered$Genre))
+SE_genre <- sqrt(MSE / n_genre)
+
+# Calculate standard errors for time period effects
+n_period <- nrow(psp_filtered) / length(unique(psp_filtered$TimePeriod))
+SE_period <- sqrt(MSE / n_period)
+
+# Create confidence intervals for genre effects
+genre_CIs <- data.frame(
+  Factor = rep("Genre", nrow(genre_means)),
+  Level = genre_means$Genre,
+  Effect = genre_means$effect,
+  Lower_CI = genre_means$effect - t_critical * SE_genre,
+  Upper_CI = genre_means$effect + t_critical * SE_genre
+)
+
+# Create confidence intervals for time period effects
+period_CIs <- data.frame(
+  Factor = rep("TimePeriod", nrow(period_means)),
+  Level = period_means$TimePeriod,
+  Effect = period_means$effect,
+  Lower_CI = period_means$effect - t_critical * SE_period,
+  Upper_CI = period_means$effect + t_critical * SE_period
+)
+
+# Combine both sets of intervals
+all_CIs <- rbind(genre_CIs, period_CIs)
+print(all_CIs)
+
+# Calculate mean sales for each genre and time period combination
+interaction_data <- psp_filtered %>%
+  group_by(Genre, TimePeriod) %>%
+  summarise(Mean_Sales = mean(Global_Sales))
+
+# Create interaction plot
+interaction.plot(
+  interaction_data$TimePeriod, 
+  interaction_data$Genre, 
+  interaction_data$Mean_Sales,
+  legend = TRUE,
+  xlab = "Time Period",
+  ylab = "Global Sales",
+  main = "Interaction Plot of Genre Performance Across PSP Lifecycle Periods",
+  trace.label = "Genre",
+  lty = c(1, 2, 3, 4)  # Different line types for each genre
+)
+
+
+# Save important objects for future reference
+# save(psp_filtered, model, report_table, file = "psp_analysis.RData")
+```
+
+
+
+
+
